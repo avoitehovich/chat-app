@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { marked } from "marked";
 import LoadingBar, { LoadingBarRef } from "react-top-loading-bar";
 import { FaTrash, FaSun, FaMoon, FaBars, FaTimes, FaPaperPlane } from "react-icons/fa";
@@ -24,7 +24,7 @@ export default function Home() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDarkTheme, setIsDarkTheme] = useState(true);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isNavbarOpen, setIsNavbarOpen] = useState(false);
   const loadingBarRef = useRef<LoadingBarRef>(null);
 
   useEffect(() => {
@@ -81,16 +81,16 @@ export default function Home() {
         )
       );
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.error("API Error:", errorMessage);
-      const errorResponse: Message = {
+      const axiosError = error as AxiosError;
+      console.error("API Error:", axiosError.response?.data || axiosError.message);
+      const errorMessage: Message = {
         role: "assistant",
         content: "Sorry, something went wrong. Try again!",
         timestamp: new Date().toLocaleString(),
       };
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === currentSessionId ? { ...s, messages: [...s.messages, errorResponse] } : s
+          s.id === currentSessionId ? { ...s, messages: [...s.messages, errorMessage] } : s
         )
       );
     } finally {
@@ -114,6 +114,7 @@ export default function Home() {
   const handleSessionClick = (id: string) => {
     setCurrentSessionId(id);
     setTopic("");
+    setIsNavbarOpen(false);
   };
 
   const toggleTheme = () => setIsDarkTheme(!isDarkTheme);
@@ -128,31 +129,18 @@ export default function Home() {
     >
       <LoadingBar color={isDarkTheme ? "#93c5fd" : "#2563eb"} ref={loadingBarRef} />
 
-      {/* Sidebar */}
+      {/* Left Sidebar (md and up) */}
       <div
-        className={`${
-          isSidebarOpen ? "w-64" : "w-16"
-        } p-4 flex flex-col transition-all duration-300 lg:w-64 md:w-20 sm:w-16 border-r ${
+        className={`hidden md:flex md:w-64 flex-col p-4 border-r ${
           isDarkTheme ? "border-purple-700" : "border-gray-300"
-        }`}
+        } bg-opacity-95 ${isDarkTheme ? "bg-gray-900" : "bg-white"}`}
       >
-        <div className="flex justify-between items-center mb-4">
-          {isSidebarOpen && (
-            <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              Chat Sessions
-            </h2>
-          )}
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 rounded-full hover:bg-purple-500 transition-colors"
-            title={isSidebarOpen ? "Collapse" : "Expand"}
-          >
-            {isSidebarOpen ? <FaTimes /> : <FaBars />}
-          </button>
-        </div>
-        {isSidebarOpen && (
-          <div className="flex-1 overflow-y-auto">
-            {sessions.map((session) => (
+        <h2 className="text-xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+          Chat Sessions
+        </h2>
+        <div className="flex-1 overflow-y-auto">
+          {sessions.length > 0 ? (
+            sessions.map((session) => (
               <div key={session.id} className="flex items-center justify-between mb-3">
                 <button
                   onClick={() => handleSessionClick(session.id)}
@@ -172,121 +160,231 @@ export default function Home() {
                   <FaTrash />
                 </button>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-extrabold flex items-center gap-2">
-            <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
-              ChatSphere
-            </span>
-            <span role="img" aria-label="logo">
-              🌌
-            </span>
-          </h1>
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-full hover:bg-purple-400 transition-colors"
-            title={isDarkTheme ? "Switch to Light" : "Switch to Dark"}
-          >
-            {isDarkTheme ? <FaSun /> : <FaMoon />}
-          </button>
-        </div>
-
-        {/* Chat History */}
-        <div
-          className={`flex-1 mb-6 p-4 rounded-xl shadow-lg overflow-y-auto ${
-            isDarkTheme ? "bg-gray-900/90" : "bg-white/90"
-          }`}
-        >
-          {getCurrentSession()?.messages && getCurrentSession()!.messages.length > 0 ? (
-            getCurrentSession()!.messages.map((msg, index) => (
-              <div
-                key={index}
-                className={`mb-4 p-4 rounded-lg shadow-sm ${
-                  msg.role === "user"
-                    ? "bg-blue-500/80 ml-auto max-w-md"
-                    : `${isDarkTheme ? "bg-purple-700/80" : "bg-gray-200/80"} max-w-md`
-                }`}
-              >
-                <div className="flex justify-between items-baseline mb-1">
-                  <span className="font-semibold">{msg.role === "user" ? "You" : "AI"}</span>
-                  <span
-                    className={`text-xs ${
-                      isDarkTheme ? "text-gray-300" : "text-gray-600"
-                    }`}
-                  >
-                    {msg.timestamp}
-                  </span>
-                </div>
-                <div
-                  className={`prose prose-sm max-w-none ${
-                    isDarkTheme ? "prose-invert" : "prose-gray"
-                  }`}
-                  dangerouslySetInnerHTML={{ __html: marked(msg.content) }}
-                />
-              </div>
             ))
           ) : (
-            <p
-              className={`italic text-center ${
-                isDarkTheme ? "text-gray-400" : "text-gray-500"
-              }`}
-            >
-              Start a conversation!
+            <p className={`${isDarkTheme ? "text-gray-400" : "text-gray-500"} italic`}>
+              No sessions yet
             </p>
           )}
         </div>
-
-        {/* Combined Input/Button */}
-        <div className="fixed bottom-6 left-0 right-0 flex justify-center pointer-events-none">
-          <div className="relative w-full max-w-2xl pointer-events-auto">
-            <textarea
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a topic..."
-              className={`w-full p-4 pr-12 rounded-xl shadow-lg resize-none focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all ${
-                isDarkTheme
-                  ? "bg-gray-800/90 text-white border-gray-700 placeholder-gray-400"
-                  : "bg-white/90 text-gray-900 border-gray-200 placeholder-gray-500"
-              } min-h-[60px] h-auto`}
-              rows={1}
-              style={{ height: "auto" }}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement;
-                target.style.height = "auto";
-                target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
-              }}
-            />
-            <button
-              onClick={handleSubmit}
-              disabled={isLoading}
-              className={`absolute right-3 bottom-3 p-2 rounded-full transition-all ${
-                isDarkTheme
-                  ? "bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 disabled:bg-gray-600"
-                  : "bg-gradient-to-r from-blue-400 to-purple-400 hover:from-blue-500 hover:to-purple-500 disabled:bg-gray-400"
-              }`}
-              title="Send Message"
-            >
-              <FaPaperPlane
-                className={`${isDarkTheme ? "text-white" : "text-white"}`}
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* Loading State */}
-        {isLoading && (
-          <div className="fixed bottom-20 left-0 right-0 text-center text-sm text-gray-400">
-            Fetching…
-          </div>
-        )}
       </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Top Navbar (Mobile Only) */}
+        <nav
+          className={`fixed top-0 left-0 right-0 z-10 p-4 shadow-xl ${
+            isDarkTheme
+              ? "bg-gradient-to-r from-gray-900 to-purple-800"
+              : "bg-gradient-to-r from-white to-blue-200"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-extrabold flex items-center gap-2">
+              <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+                ChatSphere
+              </span>
+              <span role="img" aria-label="logo">
+                🌌
+              </span>
+            </h1>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-full hover:bg-purple-400 transition-colors"
+                title={isDarkTheme ? "Switch to Light" : "Switch to Dark"}
+              >
+                {isDarkTheme ? <FaSun /> : <FaMoon />}
+              </button>
+              <button
+                onClick={() => setIsNavbarOpen(!isNavbarOpen)}
+                className="p-2 rounded-full hover:bg-purple-500 transition-colors md:hidden"
+                title={isNavbarOpen ? "Collapse" : "Expand Sessions"}
+              >
+                {isNavbarOpen ? <FaTimes /> : <FaBars />}
+              </button>
+            </div>
+          </div>
+          <div
+            className={`mt-4 md:hidden overflow-y-auto ${
+              isNavbarOpen
+                ? "max-h-60 animate-slideDown"
+                : "max-h-0 animate-slideUp overflow-hidden"
+            }`}
+          >
+            <h2
+              className={`text-lg font-semibold mb-2 ${
+                isDarkTheme ? "text-gray-300" : "text-gray-700"
+              }`}
+            >
+              Chat Sessions
+            </h2>
+            {sessions.length > 0 ? (
+              sessions.map((session) => (
+                <div key={session.id} className="flex items-center justify-between mb-2">
+                  <button
+                    onClick={() => handleSessionClick(session.id)}
+                    className={`flex-1 p-2 text-left rounded-lg transition-colors ${
+                      currentSessionId === session.id
+                        ? "bg-blue-500"
+                        : `${isDarkTheme ? "bg-purple-700" : "bg-gray-200"} hover:bg-blue-400`
+                    }`}
+                  >
+                    {session.name}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSession(session.id)}
+                    className="ml-2 p-2 text-red-400 hover:text-red-500 transition-colors"
+                    title="Delete Session"
+                  >
+                    <FaTrash />
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className={`${isDarkTheme ? "text-gray-400" : "text-gray-500"} italic`}>
+                No sessions yet
+              </p>
+            )}
+          </div>
+        </nav>
+
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col p-6 pt-24 md:pt-16">
+          <div
+            className="flex-1 mb-20 p-6 rounded-xl shadow-lg overflow-y-auto"
+            style={{ backgroundColor: isDarkTheme ? "rgba(17, 24, 39, 0.7)" : "rgba(255, 255, 255, 0.7)" }}
+          >
+            {(() => {
+              const currentSession = getCurrentSession();
+              return currentSession?.messages && currentSession.messages.length > 0 ? (
+                currentSession.messages.map((msg, index) => (
+                  <div
+                    key={index}
+                    className={`mb-6 p-4 rounded-lg transition-all max-w-2xl w-full mx-auto ${
+                      msg.role === "user" ? "ml-auto" : "mr-auto"
+                    }`}
+                  >
+                    <div className="flex justify-between items-baseline mb-2">
+                      <span className="font-semibold text-base">
+                        {msg.role === "user" ? "You" : "AI"}
+                      </span>
+                      <span
+                        className={`text-xs italic ${
+                          isDarkTheme ? "text-gray-300" : "text-gray-600"
+                        }`}
+                      >
+                        {msg.timestamp}
+                      </span>
+                    </div>
+                    <div
+                      className={`prose prose-md max-w-none ${
+                        isDarkTheme
+                          ? "prose-invert text-gray-100"
+                          : "prose-gray text-gray-800"
+                      } leading-relaxed`}
+                      style={{
+                        fontFamily: "'Inter', sans-serif",
+                        "--tw-prose-headings": isDarkTheme ? "#ffffff" : "#111827",
+                        "--tw-prose-bold": isDarkTheme ? "#f3f4f6" : "#111827",
+                        "--tw-prose-links": isDarkTheme ? "#93c5fd" : "#2563eb",
+                        "--tw-prose-lists": isDarkTheme ? "#d1d5db" : "#4a5568",
+                        "--tw-prose-body": isDarkTheme ? "#e5e7eb" : "#1f2937",
+                        padding: "1rem", // Inner padding for readability
+                        lineHeight: "1.75", // Slightly increased for better spacing
+                      } as React.CSSProperties}
+                      dangerouslySetInnerHTML={{ __html: marked(msg.content) }}
+                    />
+                  </div>
+                ))
+              ) : (
+                <p
+                  className={`italic text-center ${
+                    isDarkTheme ? "text-gray-400" : "text-gray-500"
+                  }`}
+                >
+                  Start a conversation!
+                </p>
+              );
+            })()}
+          </div>
+
+          {/* Input Area */}
+          <div className="fixed bottom-6 left-0 right-0 flex justify-center pointer-events-none">
+            <div className="relative w-full max-w-2xl pointer-events-auto">
+              <textarea
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Type a topic..."
+                className={`w-full p-4 pr-12 rounded-xl shadow-lg resize-none focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all ${
+                  isDarkTheme
+                    ? "bg-gray-800/90 text-white border-gray-700 placeholder-gray-400"
+                    : "bg-white/90 text-gray-900 border-gray-200 placeholder-gray-500"
+                } min-h-[60px] h-auto`}
+                rows={1}
+                style={{ height: "auto" }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = "auto";
+                  target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+                }}
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={isLoading}
+                className={`absolute right-3 bottom-3 p-2 rounded-full transition-all ${
+                  isDarkTheme
+                    ? "bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 disabled:bg-gray-600"
+                    : "bg-gradient-to-r from-blue-400 to-purple-400 hover:from-blue-500 hover:to-purple-500 disabled:bg-gray-400"
+                }`}
+                title="Send Message"
+              >
+                <FaPaperPlane
+                  className={`${isDarkTheme ? "text-white" : "text-white"}`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Loading State */}
+          {isLoading && (
+            <div className="fixed bottom-20 left-0 right-0 text-center text-sm text-gray-400">
+              Fetching…
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* CSS for Hamburger Animation */}
+      <style jsx global>{`
+        @keyframes slideDown {
+          from {
+            max-height: 0;
+            opacity: 0;
+          }
+          to {
+            max-height: 15rem;
+            opacity: 1;
+          }
+        }
+        @keyframes slideUp {
+          from {
+            max-height: 15rem;
+            opacity: 1;
+          }
+          to {
+            max-height: 0;
+            opacity: 0;
+          }
+        }
+        .animate-slideDown {
+          animation: slideDown 0.3s ease-out forwards;
+        }
+        .animate-slideUp {
+          animation: slideUp 0.3s ease-in forwards;
+        }
+      `}</style>
     </main>
   );
 }
