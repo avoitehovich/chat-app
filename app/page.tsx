@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { marked } from "marked";
-import { PacmanLoader } from "react-spinners";
-import { FaArrowRight, FaTrash, FaSun, FaMoon, FaBars, FaTimes } from "react-icons/fa";
+import LoadingBar, { LoadingBarRef } from "react-top-loading-bar";
+import { FaTrash, FaSun, FaMoon, FaBars, FaTimes, FaPaperPlane } from "react-icons/fa";
 
 type Message = {
   role: "user" | "assistant";
@@ -25,31 +25,26 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDarkTheme, setIsDarkTheme] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const loadingBarRef = useRef<LoadingBarRef>(null);
 
-  // Load sessions and theme from localStorage on mount
   useEffect(() => {
     const savedSessions = localStorage.getItem("chatSessions");
     if (savedSessions) setSessions(JSON.parse(savedSessions));
-
     const savedTheme = localStorage.getItem("theme");
     if (savedTheme) setIsDarkTheme(savedTheme === "dark");
   }, []);
 
-  // Save sessions and theme to localStorage
   useEffect(() => {
-    if (sessions.length > 0) {
-      localStorage.setItem("chatSessions", JSON.stringify(sessions));
-    }
+    if (sessions.length > 0) localStorage.setItem("chatSessions", JSON.stringify(sessions));
     localStorage.setItem("theme", isDarkTheme ? "dark" : "light");
   }, [sessions, isDarkTheme]);
 
-  const getCurrentSession = () =>
-    sessions.find((s) => s.id === currentSessionId) || null;
+  const getCurrentSession = () => sessions.find((s) => s.id === currentSessionId) || null;
 
   const handleSubmit = async () => {
     if (!topic) return;
 
-    const timestamp = new Date().toLocaleTimeString();
+    const timestamp = new Date().toLocaleString();
     const userMessage: Message = { role: "user", content: topic, timestamp };
 
     if (!currentSessionId) {
@@ -63,64 +58,44 @@ export default function Home() {
     } else {
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === currentSessionId
-            ? { ...s, messages: [...s.messages, userMessage] }
-            : s
+          s.id === currentSessionId ? { ...s, messages: [...s.messages, userMessage] } : s
         )
       );
     }
 
     setTopic("");
     setIsLoading(true);
+    loadingBarRef.current?.continuousStart();
 
     try {
-      const res = await axios.post(
-        "https://api.edenai.run/v2/text/chat",
-        {
-          providers: "openai",
-          text: `Tell me the most relevant content about ${topic}`,
-          chatbot_global_action: "Act as a helpful assistant",
-          temperature: 0.7,
-          max_tokens: 200,
-        },
-        {
-          headers: {
-            Authorization: process.env.NEXT_PUBLIC_EDEN_AI_KEY,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      const aiResponse = res.data.openai.generated_text;
+      const res = await axios.post("/api/chat", { topic });
+      const aiResponse = res.data;
       const assistantMessage: Message = {
         role: "assistant",
         content: aiResponse,
-        timestamp: new Date().toLocaleTimeString(),
+        timestamp: new Date().toLocaleString(),
       };
-
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === currentSessionId
-            ? { ...s, messages: [...s.messages, assistantMessage] }
-            : s
+          s.id === currentSessionId ? { ...s, messages: [...s.messages, assistantMessage] } : s
         )
       );
-    } catch (error) {
-      console.error("Error fetching response:", error);
-      const errorMessage: Message = {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error("API Error:", errorMessage);
+      const errorResponse: Message = {
         role: "assistant",
         content: "Sorry, something went wrong. Try again!",
-        timestamp: new Date().toLocaleTimeString(),
+        timestamp: new Date().toLocaleString(),
       };
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === currentSessionId
-            ? { ...s, messages: [...s.messages, errorMessage] }
-            : s
+          s.id === currentSessionId ? { ...s, messages: [...s.messages, errorResponse] } : s
         )
       );
     } finally {
       setIsLoading(false);
+      loadingBarRef.current?.complete();
     }
   };
 
@@ -147,98 +122,110 @@ export default function Home() {
     <main
       className={`flex min-h-screen ${
         isDarkTheme
-          ? "bg-gradient-to-br from-gray-900 to-gray-800 text-white"
-          : "bg-gradient-to-br from-gray-100 to-white text-gray-900"
+          ? "bg-gradient-to-br from-purple-600 to-blue-800 text-white"
+          : "bg-gradient-to-br from-gray-100 to-blue-100 text-gray-900"
       }`}
     >
-      {/* Sidebar with Sessions */}
+      <LoadingBar color={isDarkTheme ? "#93c5fd" : "#2563eb"} ref={loadingBarRef} />
+
+      {/* Sidebar */}
       <div
         className={`${
-          isSidebarOpen ? "w-1/4" : "w-16"
-        } p-4 border-r border-gray-700 transition-all duration-300 flex flex-col`}
+          isSidebarOpen ? "w-64" : "w-16"
+        } p-4 flex flex-col transition-all duration-300 lg:w-64 md:w-20 sm:w-16 border-r ${
+          isDarkTheme ? "border-purple-700" : "border-gray-300"
+        }`}
       >
         <div className="flex justify-between items-center mb-4">
-          {isSidebarOpen && <h2 className="text-xl font-bold">Chat Sessions</h2>}
+          {isSidebarOpen && (
+            <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              Chat Sessions
+            </h2>
+          )}
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="text-xl"
+            className="p-2 rounded-full hover:bg-purple-500 transition-colors"
+            title={isSidebarOpen ? "Collapse" : "Expand"}
           >
             {isSidebarOpen ? <FaTimes /> : <FaBars />}
           </button>
         </div>
         {isSidebarOpen && (
-          <>
-            {sessions.length > 0 ? (
-              sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="flex items-center justify-between mb-2"
+          <div className="flex-1 overflow-y-auto">
+            {sessions.map((session) => (
+              <div key={session.id} className="flex items-center justify-between mb-3">
+                <button
+                  onClick={() => handleSessionClick(session.id)}
+                  className={`flex-1 p-2 text-left rounded-lg transition-colors ${
+                    currentSessionId === session.id
+                      ? "bg-blue-500"
+                      : `${isDarkTheme ? "bg-purple-700" : "bg-gray-200"} hover:bg-blue-400`
+                  }`}
                 >
-                  <div
-                    onClick={() => handleSessionClick(session.id)}
-                    className={`flex-1 p-3 rounded-lg cursor-pointer transition-colors ${
-                      currentSessionId === session.id
-                        ? "bg-blue-600"
-                        : "bg-gray-700 hover:bg-gray-600"
-                    }`}
-                  >
-                    {session.name}
-                  </div>
-                  <button
-                    onClick={() => handleDeleteSession(session.id)}
-                    className="ml-2 text-red-400 hover:text-red-500"
-                  >
-                    <FaTrash />
-                  </button>
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-400">No sessions yet.</p>
-            )}
-          </>
+                  {session.name}
+                </button>
+                <button
+                  onClick={() => handleDeleteSession(session.id)}
+                  className="ml-2 p-2 text-red-400 hover:text-red-500 transition-colors"
+                  title="Delete Session"
+                >
+                  <FaTrash />
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col p-6 relative">
+      <div className="flex-1 flex flex-col p-6">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-4xl font-extrabold text-blue-400">Chat App</h1>
-          <button onClick={toggleTheme} className="text-2xl">
+          <h1 className="text-3xl font-extrabold flex items-center gap-2">
+            <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+              ChatSphere
+            </span>
+            <span role="img" aria-label="logo">
+              🌌
+            </span>
+          </h1>
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-full hover:bg-purple-400 transition-colors"
+            title={isDarkTheme ? "Switch to Light" : "Switch to Dark"}
+          >
             {isDarkTheme ? <FaSun /> : <FaMoon />}
           </button>
         </div>
 
         {/* Chat History */}
         <div
-          className={`flex-1 mb-6 p-4 rounded-lg shadow-lg overflow-y-auto ${
-            isDarkTheme ? "bg-gray-900" : "bg-white"
+          className={`flex-1 mb-6 p-4 rounded-xl shadow-lg overflow-y-auto ${
+            isDarkTheme ? "bg-gray-900/90" : "bg-white/90"
           }`}
         >
-          {getCurrentSession()?.messages?.length ?? 0 > 0 ? (
+          {getCurrentSession()?.messages && getCurrentSession()!.messages.length > 0 ? (
             getCurrentSession()!.messages.map((msg, index) => (
               <div
                 key={index}
-                className={`mb-4 p-3 rounded-lg ${
+                className={`mb-4 p-4 rounded-lg shadow-sm ${
                   msg.role === "user"
-                    ? "bg-blue-500 ml-auto max-w-md"
-                    : `${isDarkTheme ? "bg-gray-700" : "bg-gray-200"} max-w-md`
+                    ? "bg-blue-500/80 ml-auto max-w-md"
+                    : `${isDarkTheme ? "bg-purple-700/80" : "bg-gray-200/80"} max-w-md`
                 }`}
               >
-                <div className="flex justify-between items-baseline">
-                  <span className="font-semibold">
-                    {msg.role === "user" ? "You" : "AI"}
-                  </span>
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="font-semibold">{msg.role === "user" ? "You" : "AI"}</span>
                   <span
                     className={`text-xs ${
-                      isDarkTheme ? "text-gray-400" : "text-gray-600"
+                      isDarkTheme ? "text-gray-300" : "text-gray-600"
                     }`}
                   >
                     {msg.timestamp}
                   </span>
                 </div>
                 <div
-                  className={`prose prose-sm max-w-none mt-1 ${
-                    isDarkTheme ? "prose-invert" : ""
+                  className={`prose prose-sm max-w-none ${
+                    isDarkTheme ? "prose-invert" : "prose-gray"
                   }`}
                   dangerouslySetInnerHTML={{ __html: marked(msg.content) }}
                 />
@@ -246,54 +233,57 @@ export default function Home() {
             ))
           ) : (
             <p
-              className={`italic ${
+              className={`italic text-center ${
                 isDarkTheme ? "text-gray-400" : "text-gray-500"
               }`}
             >
-              Start a new chat!
+              Start a conversation!
             </p>
           )}
         </div>
 
-        {/* Centered Input Area */}
-        <div className="absolute inset-x-0 bottom-6 flex justify-center">
-          <div className="relative w-full max-w-2xl">
+        {/* Combined Input/Button */}
+        <div className="fixed bottom-6 left-0 right-0 flex justify-center pointer-events-none">
+          <div className="relative w-full max-w-2xl pointer-events-auto">
             <textarea
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Enter a topic (e.g., space exploration)"
-              className={`w-full p-4 pr-12 border rounded-lg shadow-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+              placeholder="Type a topic..."
+              className={`w-full p-4 pr-12 rounded-xl shadow-lg resize-none focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all ${
                 isDarkTheme
-                  ? "bg-gray-800 text-white border-gray-600 placeholder-gray-400"
-                  : "bg-white text-gray-900 border-gray-300 placeholder-gray-500"
-              } min-h-[80px] h-auto`}
-              rows={3}
+                  ? "bg-gray-800/90 text-white border-gray-700 placeholder-gray-400"
+                  : "bg-white/90 text-gray-900 border-gray-200 placeholder-gray-500"
+              } min-h-[60px] h-auto`}
+              rows={1}
               style={{ height: "auto" }}
               onInput={(e) => {
                 const target = e.target as HTMLTextAreaElement;
                 target.style.height = "auto";
-                target.style.height = `${target.scrollHeight}px`;
+                target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
               }}
             />
             <button
               onClick={handleSubmit}
               disabled={isLoading}
-              className={`absolute bottom-3 right-3 p-2 rounded-md transition-colors ${
+              className={`absolute right-3 bottom-3 p-2 rounded-full transition-all ${
                 isDarkTheme
-                  ? "bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500"
-                  : "bg-blue-400 hover:bg-blue-500 disabled:bg-gray-300"
+                  ? "bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 disabled:bg-gray-600"
+                  : "bg-gradient-to-r from-blue-400 to-purple-400 hover:from-blue-500 hover:to-purple-500 disabled:bg-gray-400"
               }`}
+              title="Send Message"
             >
-              <FaArrowRight className="text-white" />
+              <FaPaperPlane
+                className={`${isDarkTheme ? "text-white" : "text-white"}`}
+              />
             </button>
           </div>
         </div>
 
-        {/* Loading Spinner */}
+        {/* Loading State */}
         {isLoading && (
-          <div className="flex justify-center mt-4 absolute bottom-20 inset-x-0">
-            <PacmanLoader color={isDarkTheme ? "#60a5fa" : "#2563eb"} size={25} />
+          <div className="fixed bottom-20 left-0 right-0 text-center text-sm text-gray-400">
+            Fetching…
           </div>
         )}
       </div>
